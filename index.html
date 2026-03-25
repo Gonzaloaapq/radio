@@ -421,6 +421,11 @@
     animation: blink 1.2s ease-in-out infinite;
   }
 
+  @keyframes playPulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(255,60,60,0.6); }
+    50%      { box-shadow: 0 0 0 16px rgba(255,60,60,0); }
+  }
+
   /* Loading spinner on button */
   .play-btn.loading::before {
     content: '';
@@ -583,6 +588,7 @@ function togglePlay() {
     setPlayingState(false);
     stopTimer();
     stopWatchdog();
+    try { localStorage.setItem('radio_playing', '0'); } catch(e) {}
   } else {
     playBtn.classList.add('loading');
     startSilentKeepAlive();
@@ -596,20 +602,28 @@ function togglePlay() {
         startTimer();
         startMetadataSSE();
         startWatchdog();
+        try { localStorage.setItem('radio_playing', '1'); } catch(e) {}
       })
       .catch(err => {
         playBtn.classList.remove('loading');
-        console.error('Playback error:', err);
-        document.getElementById('streamStatus').textContent = 'Error';
+        // Don't show "Error" — just reset cleanly
+        setPlayingState(false);
+        document.getElementById('streamStatus').textContent = 'EN VIVO';
+        try { localStorage.setItem('radio_playing', '0'); } catch(e) {}
       });
   }
 }
 
-audio.addEventListener('error', () => {
+audio.addEventListener('error', (e) => {
+  // Only show error if user explicitly pressed play (not background reconnect)
   playBtn.classList.remove('loading');
-  setPlayingState(false);
-  stopTimer();
-  document.getElementById('streamStatus').textContent = 'Error';
+  if (isPlaying) {
+    // Stream interrupted — reset cleanly, keep status as EN VIVO
+    setPlayingState(false);
+    stopTimer();
+    stopWatchdog();
+    document.getElementById('streamStatus').textContent = 'EN VIVO';
+  }
 });
 
 // ---- Stream metadata via Zeno.fm SSE API ----
@@ -698,6 +712,16 @@ setDefaultMeta();
 // Start SSE right away so info shows before pressing play
 startMetadataSSE();
 
+// Check if user was playing before leaving — show resume hint
+try {
+  if (localStorage.getItem('radio_playing') === '1') {
+    // Was playing before — show pulsing play button hint
+    setTimeout(() => {
+      playBtn.style.animation = 'playPulse 1s ease-in-out 3';
+    }, 500);
+  }
+} catch(e) {}
+
 
 // ---- Media Session API (lock screen / notification controls) ----
 function updateMediaSession(artist, title) {
@@ -744,10 +768,16 @@ function startWatchdog() {
   watchdogInterval = setInterval(() => {
     if (isPlaying && audio.paused) {
       audio.play().catch(() => {
-        // Stream may have dropped — reload it
+        // Stream dropped — silently reload without showing error
         audio.src = STREAM_URL;
         audio.load();
-        audio.play().catch(() => {});
+        audio.play().catch(() => {
+          // Autoplay blocked — reset UI cleanly, no error message
+          setPlayingState(false);
+          stopTimer();
+          stopWatchdog();
+          document.getElementById('streamStatus').textContent = 'EN VIVO';
+        });
       });
     }
   }, 1500);
