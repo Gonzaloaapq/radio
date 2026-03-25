@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Radio Online</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --vinyl: #1a1a24;
+    --groove: #0d0d14;
+    --accent: #ff3c3c;
+    --accent2: #ff8c00;
+    --gold: #ffd060;
+    --text: #f0ece0;
+    --muted: #6b6b80;
+    --glow: rgba(255,60,60,0.35);
+    --wave1: #ff3c3c;
+    --wave2: #ff8c00;
+    --wave3: #ffd060;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Space Mono', monospace;
+    overflow: hidden;
+  }
+
+  /* Grain overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 100;
+    opacity: 0.5;
+  }
+
+  /* Ambient glow background */
+  .ambient {
+    position: fixed;
+    width: 600px;
+    height: 600px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,60,60,0.07) 0%, transparent 70%);
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    transition: opacity 0.8s ease;
+  }
+
+  .ambient.playing {
+    animation: ambientPulse 3s ease-in-out infinite;
+  }
+
+  @keyframes ambientPulse {
+    0%, 100% { opacity: 0.6; transform: translate(-50%,-50%) scale(1); }
+    50% { opacity: 1; transform: translate(-50%,-50%) scale(1.15); }
+  }
+
+  .card {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid rgba(255,60,60,0.15);
+    border-radius: 4px;
+    padding: 48px 44px 40px;
+    width: 480px;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.03) inset,
+      0 40px 80px rgba(0,0,0,0.7),
+      0 0 60px rgba(255,60,60,0.08);
+  }
+
+  /* Top label */
+  .on-air {
+    position: absolute;
+    top: -1px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--accent);
+    color: #fff;
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.25em;
+    padding: 4px 14px;
+    border-radius: 0 0 6px 6px;
+    opacity: 0;
+    transition: opacity 0.4s;
+  }
+  .on-air.visible { opacity: 1; }
+  .on-air::before {
+    content: '';
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #fff;
+    margin-right: 6px;
+    vertical-align: middle;
+    animation: blink 1s step-end infinite;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+  /* Turntable */
+  .turntable-wrap {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 36px;
+  }
+
+  .turntable {
+    position: relative;
+    width: 200px;
+    height: 200px;
+  }
+
+  /* Platter */
+  .platter {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at 50% 50%, #252530 0%, #111118 100%);
+    box-shadow:
+      0 0 0 3px rgba(255,255,255,0.04),
+      0 8px 32px rgba(0,0,0,0.8),
+      0 0 24px rgba(255,60,60,0.08);
+  }
+
+  /* Vinyl record */
+  .vinyl {
+    position: absolute;
+    inset: 8px;
+    border-radius: 50%;
+    background: var(--groove);
+    animation: spin 2.4s linear infinite;
+    animation-play-state: paused;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+  }
+  .vinyl.playing { animation-play-state: running; }
+
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+  /* Grooves */
+  .groove {
+    position: absolute;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.04);
+    top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+  }
+
+  /* Label center */
+  .vinyl-label {
+    position: absolute;
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    background: radial-gradient(circle at 40% 35%, var(--accent2), var(--accent));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 16px rgba(255,60,60,0.5);
+    overflow: hidden;
+  }
+  .vinyl-label::before {
+    content: '';
+    position: absolute;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--bg);
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.1);
+  }
+  .vinyl-label-text {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 8px;
+    color: rgba(255,255,255,0.7);
+    letter-spacing: 0.15em;
+    position: absolute;
+    bottom: 14px;
+    text-transform: uppercase;
+  }
+
+  /* Tonearm */
+  .tonearm-base {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 40% 35%, #444, #222);
+    border: 1px solid rgba(255,255,255,0.1);
+    z-index: 10;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  }
+
+  .tonearm {
+    position: absolute;
+    top: 24px; right: 24px;
+    width: 3px; height: 90px;
+    background: linear-gradient(180deg, #888 0%, #555 100%);
+    border-radius: 2px;
+    transform-origin: top center;
+    transform: rotate(-18deg);
+    transition: transform 1.2s cubic-bezier(0.4,0,0.2,1);
+    z-index: 9;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  }
+  .tonearm::after {
+    content: '';
+    position: absolute;
+    bottom: -4px; left: 50%;
+    transform: translateX(-50%);
+    width: 7px; height: 7px;
+    border-radius: 1px;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+  }
+  .tonearm.playing { transform: rotate(-6deg); }
+
+  /* Reflection sheen */
+  .vinyl::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: linear-gradient(125deg, rgba(255,255,255,0.06) 0%, transparent 50%);
+    pointer-events: none;
+  }
+
+  /* Info section */
+  .info {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+
+  .station-name {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 42px;
+    color: var(--text);
+    letter-spacing: 0.08em;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+
+  .station-url {
+    font-size: 9px;
+    color: var(--muted);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 18px;
+  }
+
+  /* Stream metadata */
+  .meta-box {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 3px;
+    padding: 12px 16px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+
+  .meta-item { text-align: left; }
+  .meta-label {
+    font-size: 8px;
+    color: var(--muted);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+  }
+  .meta-value {
+    font-size: 14px;
+    color: var(--text);
+    font-weight: 700;
+    letter-spacing: 0.05em;
+  }
+  .meta-value.accent { color: var(--accent); }
+
+  /* Now playing ticker */
+  .now-playing {
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    padding: 8px 0;
+    border-top: 1px solid rgba(255,255,255,0.04);
+    margin-top: 4px;
+  }
+  .ticker-artist { color: #ffffff; font-weight: 700; }
+  .ticker-sep    { color: var(--muted); }
+  .ticker-title  { color: var(--gold); }
+  .ticker-inner {
+    display: inline-block;
+    animation: ticker 18s linear infinite;
+  }
+  @keyframes ticker {
+    0% { transform: translateX(380px); }
+    100% { transform: translateX(-100%); }
+  }
+
+  /* Waveform */
+  .waveform {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    height: 48px;
+    margin-bottom: 28px;
+  }
+
+  .bar {
+    width: 3px;
+    border-radius: 2px;
+    background: var(--wave1);
+    animation: wave 0.8s ease-in-out infinite alternate;
+    animation-play-state: paused;
+    height: 4px;
+    transition: background 0.3s;
+  }
+  .bar.playing { animation-play-state: running; }
+
+  .bar:nth-child(3n+1) { background: var(--wave1); }
+  .bar:nth-child(3n+2) { background: var(--wave2); }
+  .bar:nth-child(3n+3) { background: var(--wave3); }
+
+  @keyframes wave {
+    0%   { height: 4px; opacity: 0.4; }
+    100% { height: var(--h, 32px); opacity: 1; }
+  }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+  }
+
+  .vol-label {
+    font-size: 9px;
+    color: var(--muted);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 80px;
+    height: 2px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    box-shadow: 0 0 6px var(--accent);
+  }
+
+  .play-btn {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    transition: all 0.2s ease;
+    box-shadow:
+      0 0 0 0 var(--glow),
+      inset 0 0 0 0 var(--accent);
+  }
+
+  .play-btn:hover {
+    background: rgba(255,60,60,0.1);
+    box-shadow: 0 0 20px var(--glow), inset 0 0 0 0 var(--accent);
+    transform: scale(1.05);
+  }
+
+  .play-btn.playing {
+    background: var(--accent);
+    box-shadow: 0 0 30px var(--glow), 0 0 60px rgba(255,60,60,0.2);
+  }
+
+  .play-btn svg {
+    width: 22px; height: 22px;
+    fill: var(--accent);
+    transition: fill 0.2s;
+  }
+  .play-btn.playing svg { fill: #fff; }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.3s;
+    box-shadow: none;
+  }
+  .status-dot.live {
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+    animation: blink 1.2s ease-in-out infinite;
+  }
+
+  /* Loading spinner on button */
+  .play-btn.loading::before {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    border-top-color: var(--accent);
+    animation: spin 0.8s linear infinite;
+  }
+</style>
+</head>
+<body>
+
+<div class="ambient" id="ambient"></div>
+
+<div class="card">
+  <div class="on-air" id="onAir">ON AIR</div>
+
+  <div class="turntable-wrap">
+    <div class="turntable">
+      <div class="platter"></div>
+      <div class="vinyl" id="vinyl">
+        <!-- Grooves -->
+        <div class="groove" style="width:168px;height:168px"></div>
+        <div class="groove" style="width:148px;height:148px"></div>
+        <div class="groove" style="width:128px;height:128px"></div>
+        <div class="groove" style="width:108px;height:108px"></div>
+        <div class="groove" style="width:90px;height:90px"></div>
+        <div class="groove" style="width:74px;height:74px"></div>
+        <div class="groove" style="width:70px;height:70px;border-color:rgba(255,255,255,0.08)"></div>
+        <div class="vinyl-label">
+          <span class="vinyl-label-text">RADIO</span>
+        </div>
+      </div>
+      <div class="tonearm-base"></div>
+      <div class="tonearm" id="tonearm"></div>
+    </div>
+  </div>
+
+  <div class="info">
+    <div class="station-name" id="stationName">MI RADIO</div>
+    <div class="station-url">ALIANZA RADIO</div>
+
+    <div class="meta-box">
+      <div class="meta-item">
+        <div class="meta-label">Estado</div>
+        <div class="meta-value accent" id="streamStatus">—</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Calidad</div>
+        <div class="meta-value" id="streamBitrate">—</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Oyentes</div>
+        <div class="meta-value" id="streamListeners">—</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Género</div>
+        <div class="meta-value" id="streamGenre">—</div>
+      </div>
+    </div>
+
+    <div class="now-playing">
+      <span class="ticker-inner" id="ticker"><span class="ticker-title">♪ &nbsp; Cargando información del stream... &nbsp; ♪</span></span>
+    </div>
+  </div>
+
+  <!-- Waveform -->
+  <div class="waveform" id="waveform"></div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <span class="status-dot" id="statusDot"></span>
+    <div class="vol-label">VOL</div>
+    <input type="range" id="volume" min="0" max="100" value="80">
+
+    <button class="play-btn" id="playBtn" onclick="togglePlay()">
+      <svg id="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+    </button>
+
+    <div class="vol-label" id="timeDisplay" style="min-width:44px;text-align:right;color:var(--text);font-size:11px;">00:00</div>
+  </div>
+</div>
+
+<audio id="audioEl" crossorigin="anonymous"></audio>
+
+<script>
+const STREAM_URL = 'https://stream.zeno.fm/3un4tp1rws8uv';
+const audio = document.getElementById('audioEl');
+const playBtn = document.getElementById('playBtn');
+const playIcon = document.getElementById('playIcon');
+const vinyl = document.getElementById('vinyl');
+const tonearm = document.getElementById('tonearm');
+const ambient = document.getElementById('ambient');
+const onAir = document.getElementById('onAir');
+const statusDot = document.getElementById('statusDot');
+const waveformEl = document.getElementById('waveform');
+
+let isPlaying = false;
+let elapsed = 0;
+let timer = null;
+
+// ---- Build waveform bars ----
+const barCount = 48;
+const heights = [8,14,22,30,40,36,24,18,10,16,28,38,44,32,20,12,8,20,36,44,38,26,16,10,
+                 14,24,34,42,36,28,18,12,8,18,30,44,40,30,20,10,16,28,38,44,34,22,14,8];
+for (let i = 0; i < barCount; i++) {
+  const bar = document.createElement('div');
+  bar.className = 'bar';
+  bar.style.setProperty('--h', (heights[i % heights.length]) + 'px');
+  bar.style.animationDelay = (Math.random() * 0.8) + 's';
+  bar.style.animationDuration = (0.5 + Math.random() * 0.7) + 's';
+  waveformEl.appendChild(bar);
+}
+
+// ---- Volume ----
+document.getElementById('volume').addEventListener('input', e => {
+  audio.volume = e.target.value / 100;
+});
+audio.volume = 0.8;
+
+// ---- Timer display ----
+function startTimer() {
+  timer = setInterval(() => {
+    elapsed++;
+    const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+    const s = String(elapsed % 60).padStart(2, '0');
+    document.getElementById('timeDisplay').textContent = m + ':' + s;
+  }, 1000);
+}
+function stopTimer() {
+  clearInterval(timer);
+  elapsed = 0;
+  document.getElementById('timeDisplay').textContent = '00:00';
+}
+
+// ---- Play / Pause ----
+function setPlayingState(playing) {
+  isPlaying = playing;
+  const bars = document.querySelectorAll('.bar');
+  bars.forEach(b => playing ? b.classList.add('playing') : b.classList.remove('playing'));
+  playing ? vinyl.classList.add('playing') : vinyl.classList.remove('playing');
+  playing ? tonearm.classList.add('playing') : tonearm.classList.remove('playing');
+  playing ? ambient.classList.add('playing') : ambient.classList.remove('playing');
+  playing ? onAir.classList.add('visible') : onAir.classList.remove('visible');
+  playing ? statusDot.classList.add('live') : statusDot.classList.remove('live');
+  playing ? playBtn.classList.add('playing') : playBtn.classList.remove('playing');
+  playIcon.innerHTML = playing
+    ? '<rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/>'
+    : '<path d="M8 5v14l11-7z"/>';
+}
+
+function togglePlay() {
+  if (playBtn.classList.contains('loading')) return;
+
+  if (isPlaying) {
+    audio.pause();
+    audio.src = '';
+    setPlayingState(false);
+    stopTimer();
+    stopWatchdog();
+  } else {
+    playBtn.classList.add('loading');
+    startSilentKeepAlive();
+    requestWakeLock();
+    audio.src = STREAM_URL;
+    audio.load();
+    audio.play()
+      .then(() => {
+        playBtn.classList.remove('loading');
+        setPlayingState(true);
+        startTimer();
+        startMetadataSSE();
+        startWatchdog();
+      })
+      .catch(err => {
+        playBtn.classList.remove('loading');
+        console.error('Playback error:', err);
+        document.getElementById('streamStatus').textContent = 'Error';
+      });
+  }
+}
+
+audio.addEventListener('error', () => {
+  playBtn.classList.remove('loading');
+  setPlayingState(false);
+  stopTimer();
+  document.getElementById('streamStatus').textContent = 'Error';
+});
+
+// ---- Stream metadata via Zeno.fm SSE API ----
+const META_URL = 'https://api.zeno.fm/mounts/metadata/subscribe/3un4tp1rws8uv';
+let sseSource = null;
+
+function setDefaultMeta() {
+  document.getElementById('streamStatus').textContent = 'EN VIVO';
+  document.getElementById('streamBitrate').textContent = '128 kbps';
+  document.getElementById('streamGenre').textContent = 'ONLINE';
+  document.getElementById('streamListeners').textContent = '—';
+  document.getElementById('stationName').textContent = 'ALIANZA RADIO';
+  const ticker = document.getElementById('ticker');
+  ticker.innerHTML = '<span class="ticker-title">♪ &nbsp; Alianza Radio — Transmitiendo en vivo... &nbsp; ♪</span>';
+}
+
+function startMetadataSSE() {
+  if (sseSource) return; // already connected
+  sseSource = new EventSource(META_URL);
+
+  sseSource.onmessage = function(e) {
+    try {
+      const data = JSON.parse(e.data);
+      handleMetadata(data);
+    } catch(err) {
+      // raw text fallback
+      if (e.data && e.data.trim()) updateNowPlaying(e.data.trim());
+    }
+  };
+
+  // Zeno also sends named 'metadata' events
+  sseSource.addEventListener('metadata', function(e) {
+    try {
+      const data = JSON.parse(e.data);
+      handleMetadata(data);
+    } catch(err) {}
+  });
+
+  sseSource.onerror = function() {
+    // SSE dropped, retry in 10s
+    sseSource.close();
+    sseSource = null;
+    setTimeout(() => { if (isPlaying) startMetadataSSE(); }, 10000);
+  };
+}
+
+function stopMetadataSSE() {
+  if (sseSource) { sseSource.close(); sseSource = null; }
+}
+
+function handleMetadata(data) {
+  // Zeno sends: { streamTitle, title, artist, ... }
+  const artist = data.artist || '';
+  const title  = data.title  || data.streamTitle || '';
+
+  if (artist && title) {
+    updateNowPlaying(artist, title);
+    updateMediaSession(artist, title);
+    document.getElementById('streamStatus').textContent = 'EN VIVO';
+  } else if (title) {
+    updateNowPlaying('', title);
+    updateMediaSession('Alianza Radio', title);
+  } else if (data.streamTitle) {
+    updateNowPlaying('', data.streamTitle);
+    updateMediaSession('Alianza Radio', data.streamTitle);
+  }
+
+  if (data.bitrate)    document.getElementById('streamBitrate').textContent   = data.bitrate + ' kbps';
+  if (data.listeners)  document.getElementById('streamListeners').textContent = data.listeners;
+  if (data.genre)      document.getElementById('streamGenre').textContent     = data.genre.toUpperCase();
+}
+
+function updateNowPlaying(artist, title) {
+  const ticker = document.getElementById('ticker');
+  if (artist && title) {
+    ticker.innerHTML = `<span class="ticker-artist">♪ &nbsp; ${artist}</span><span class="ticker-sep"> — </span><span class="ticker-title">${title} &nbsp; ♪</span>`;
+  } else {
+    const text = artist || title || '';
+    ticker.innerHTML = `<span class="ticker-title">♪ &nbsp; ${text} &nbsp; ♪</span>`;
+  }
+}
+
+// Set defaults immediately
+setDefaultMeta();
+
+// Start SSE right away so info shows before pressing play
+startMetadataSSE();
+
+
+// ---- Media Session API (lock screen / notification controls) ----
+function updateMediaSession(artist, title) {
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title:  title  || 'Alianza Radio',
+      artist: artist || 'En vivo',
+      album:  'Alianza Radio',
+    });
+    navigator.mediaSession.setActionHandler('play',  () => { if (!isPlaying) togglePlay(); });
+    navigator.mediaSession.setActionHandler('pause', () => { if (isPlaying)  togglePlay(); });
+    navigator.mediaSession.setActionHandler('stop',  () => { if (isPlaying)  togglePlay(); });
+  }
+}
+
+// ---- BACKGROUND PLAYBACK: keep audio alive at all costs ----
+
+// 1) Silent AudioContext with oscillator at volume 0
+//    This tricks the browser into thinking audio is active and prevents tab throttling
+let silentCtx = null;
+function startSilentKeepAlive() {
+  if (silentCtx) return;
+  try {
+    silentCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = silentCtx.createOscillator();
+    const gain = silentCtx.createGain();
+    gain.gain.value = 0.001; // inaudible but non-zero
+    osc.connect(gain);
+    gain.connect(silentCtx.destination);
+    osc.start();
+    // Resume context if suspended (mobile browsers suspend on background)
+    setInterval(() => {
+      if (silentCtx && silentCtx.state === 'suspended') {
+        silentCtx.resume().catch(() => {});
+      }
+    }, 2000);
+  } catch(e) {}
+}
+
+// 2) Watchdog: if audio pauses and we didn't ask for it, restart immediately
+let watchdogInterval = null;
+function startWatchdog() {
+  if (watchdogInterval) return;
+  watchdogInterval = setInterval(() => {
+    if (isPlaying && audio.paused) {
+      audio.play().catch(() => {
+        // Stream may have dropped — reload it
+        audio.src = STREAM_URL;
+        audio.load();
+        audio.play().catch(() => {});
+      });
+    }
+  }, 1500);
+}
+function stopWatchdog() {
+  clearInterval(watchdogInterval);
+  watchdogInterval = null;
+}
+
+// 3) On visibility change — resume AudioContext and watchdog immediately
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    if (silentCtx && silentCtx.state === 'suspended') silentCtx.resume().catch(() => {});
+    if (audioCtx  && audioCtx.state  === 'suspended') audioCtx.resume().catch(() => {});
+    if (isPlaying && audio.paused) audio.play().catch(() => {});
+  }
+});
+
+// 4) Web Lock API — prevents browser from throttling background tabs (Chrome/Android)
+function requestWakeLock() {
+  if ('locks' in navigator) {
+    navigator.locks.request('radio_stream', { mode: 'shared' }, () => {
+      return new Promise(() => {}); // never resolves = holds lock forever
+    });
+  }
+}
+
+// ---- Web Audio visualizer (enhances wave) ----
+let audioCtx, analyser, src, rafId;
+
+audio.addEventListener('play', () => {
+  if (!audioCtx) {
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      src = audioCtx.createMediaElementSource(audio);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 128;
+      src.connect(analyser);
+      analyser.connect(audioCtx.destination);
+      animateWave();
+    } catch(e) {}
+  }
+});
+
+function animateWave() {
+  if (!analyser) return;
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  const bars = document.querySelectorAll('.bar');
+  function frame() {
+    rafId = requestAnimationFrame(frame);
+    analyser.getByteFrequencyData(data);
+    bars.forEach((bar, i) => {
+      const idx = Math.floor(i * data.length / bars.length);
+      const val = (data[idx] / 255) * 44 + 4;
+      bar.style.setProperty('--h', val + 'px');
+    });
+  }
+  frame();
+}
+</script>
+</body>
+</html>
