@@ -34,6 +34,7 @@
     overflow: hidden;
   }
 
+  /* Grain overlay */
   body::before {
     content: '';
     position: fixed;
@@ -44,6 +45,7 @@
     opacity: 0.5;
   }
 
+  /* Ambient glow background */
   .ambient {
     position: fixed;
     width: 600px;
@@ -79,6 +81,7 @@
       0 0 60px rgba(255,60,60,0.08);
   }
 
+  /* Top label */
   .on-air {
     position: absolute;
     top: -1px;
@@ -108,6 +111,7 @@
   }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
 
+  /* Turntable */
   .turntable-wrap {
     display: flex;
     justify-content: center;
@@ -120,6 +124,7 @@
     height: 200px;
   }
 
+  /* Platter */
   .platter {
     position: absolute;
     inset: 0;
@@ -132,6 +137,7 @@
       0 0 24px rgba(255,60,60,0.08);
   }
 
+  /* Vinyl record */
   .vinyl {
     position: absolute;
     inset: 8px;
@@ -145,6 +151,7 @@
 
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
+  /* Grooves */
   .groove {
     position: absolute;
     border-radius: 50%;
@@ -153,6 +160,7 @@
     transform: translate(-50%,-50%);
   }
 
+  /* Label center */
   .vinyl-label {
     position: absolute;
     width: 64px; height: 64px;
@@ -184,6 +192,7 @@
     text-transform: uppercase;
   }
 
+  /* Tonearm */
   .tonearm-base {
     position: absolute;
     top: 10px;
@@ -220,6 +229,7 @@
   }
   .tonearm.playing { transform: rotate(-6deg); }
 
+  /* Reflection sheen */
   .vinyl::after {
     content: '';
     position: absolute;
@@ -229,6 +239,7 @@
     pointer-events: none;
   }
 
+  /* Info section */
   .info {
     text-align: center;
     margin-bottom: 28px;
@@ -251,6 +262,7 @@
     margin-bottom: 18px;
   }
 
+  /* Stream metadata */
   .meta-box {
     background: rgba(255,255,255,0.03);
     border: 1px solid rgba(255,255,255,0.06);
@@ -278,6 +290,7 @@
   }
   .meta-value.accent { color: var(--accent); }
 
+  /* Now playing ticker */
   .now-playing {
     overflow: hidden;
     white-space: nowrap;
@@ -299,6 +312,7 @@
     100% { transform: translateX(-100%); }
   }
 
+  /* Waveform */
   .waveform {
     display: flex;
     align-items: center;
@@ -328,6 +342,7 @@
     100% { height: var(--h, 32px); opacity: 1; }
   }
 
+  /* Controls */
   .controls {
     display: flex;
     align-items: center;
@@ -411,6 +426,7 @@
     50%      { box-shadow: 0 0 0 16px rgba(255,60,60,0); }
   }
 
+  /* Loading spinner on button */
   .play-btn.loading::before {
     content: '';
     position: absolute;
@@ -433,6 +449,7 @@
     <div class="turntable">
       <div class="platter"></div>
       <div class="vinyl" id="vinyl">
+        <!-- Grooves -->
         <div class="groove" style="width:168px;height:168px"></div>
         <div class="groove" style="width:148px;height:148px"></div>
         <div class="groove" style="width:128px;height:128px"></div>
@@ -477,8 +494,10 @@
     </div>
   </div>
 
+  <!-- Waveform -->
   <div class="waveform" id="waveform"></div>
 
+  <!-- Controls -->
   <div class="controls">
     <span class="status-dot" id="statusDot"></span>
     <div class="vol-label">VOL</div>
@@ -495,7 +514,7 @@
 <audio id="audioEl" crossorigin="anonymous"></audio>
 
 <script>
-const STREAM_URL = 'http://157.137.215.16:8000/radio.mp3';
+const STREAM_URL = 'https://stream.zeno.fm/3un4tp1rws8uv';
 const audio = document.getElementById('audioEl');
 const playBtn = document.getElementById('playBtn');
 const playIcon = document.getElementById('playIcon');
@@ -581,13 +600,13 @@ function togglePlay() {
         playBtn.classList.remove('loading');
         setPlayingState(true);
         startTimer();
-        fetchIcecastMeta();
-        startMetaPolling();
+        startMetadataSSE();
         startWatchdog();
         try { localStorage.setItem('radio_playing', '1'); } catch(e) {}
       })
       .catch(err => {
         playBtn.classList.remove('loading');
+        // Don't show "Error" — just reset cleanly
         setPlayingState(false);
         document.getElementById('streamStatus').textContent = 'EN VIVO';
         try { localStorage.setItem('radio_playing', '0'); } catch(e) {}
@@ -595,9 +614,11 @@ function togglePlay() {
   }
 }
 
-audio.addEventListener('error', () => {
+audio.addEventListener('error', (e) => {
+  // Only show error if user explicitly pressed play (not background reconnect)
   playBtn.classList.remove('loading');
   if (isPlaying) {
+    // Stream interrupted — reset cleanly, keep status as EN VIVO
     setPlayingState(false);
     stopTimer();
     stopWatchdog();
@@ -605,72 +626,74 @@ audio.addEventListener('error', () => {
   }
 });
 
-// ---- Icecast metadata polling ----
-// Icecast exposes JSON stats at /status-json.xsl
-const META_BASE = 'http://157.137.215.16:8000';
-let metaInterval = null;
-
-function fetchIcecastMeta() {
-  fetch(META_BASE + '/status-json.xsl')
-    .then(r => r.json())
-    .then(data => {
-      const icestats = data.icestats;
-      if (!icestats) return;
-
-      // server_description → station name (optional)
-      if (icestats.server_description) {
-        document.getElementById('stationName').textContent = icestats.server_description.toUpperCase();
-      }
-
-      // source can be an object (single mount) or array
-      let source = icestats.source;
-      if (!source) return;
-      if (Array.isArray(source)) {
-        // pick the /radio.mp3 mount
-        source = source.find(s => s.listenurl && s.listenurl.includes('radio.mp3')) || source[0];
-      }
-
-      if (source.title)     updateNowPlaying(source.artist || '', source.title);
-      if (source.bitrate)   document.getElementById('streamBitrate').textContent = source.bitrate + ' kbps';
-      if (source.genre)     document.getElementById('streamGenre').textContent   = source.genre.toUpperCase();
-      if (source.listeners !== undefined) document.getElementById('streamListeners').textContent = source.listeners;
-
-      document.getElementById('streamStatus').textContent = 'EN VIVO';
-
-      if ('mediaSession' in navigator && (source.title || source.artist)) {
-        navigator.mediaSession.metadata = new MediaMetadata({
-          title:  source.title  || 'Alianza Radio',
-          artist: source.artist || 'En vivo',
-          album:  'Alianza Radio',
-        });
-      }
-    })
-    .catch(() => {
-      // stats endpoint not reachable (CORS or network) — show defaults
-    });
-}
-
-function startMetaPolling() {
-  if (metaInterval) return;
-  metaInterval = setInterval(() => {
-    if (isPlaying) fetchIcecastMeta();
-    else stopMetaPolling();
-  }, 15000); // refresh every 15s
-}
-
-function stopMetaPolling() {
-  clearInterval(metaInterval);
-  metaInterval = null;
-}
+// ---- Stream metadata via Zeno.fm SSE API ----
+const META_URL = 'https://api.zeno.fm/mounts/metadata/subscribe/3un4tp1rws8uv';
+let sseSource = null;
 
 function setDefaultMeta() {
-  document.getElementById('streamStatus').textContent  = 'EN VIVO';
+  document.getElementById('streamStatus').textContent = 'EN VIVO';
   document.getElementById('streamBitrate').textContent = '128 kbps';
-  document.getElementById('streamGenre').textContent   = 'ONLINE';
+  document.getElementById('streamGenre').textContent = 'ONLINE';
   document.getElementById('streamListeners').textContent = '—';
-  document.getElementById('stationName').textContent   = 'ALIANZA RADIO';
+  document.getElementById('stationName').textContent = 'ALIANZA RADIO';
   const ticker = document.getElementById('ticker');
   ticker.innerHTML = '<span class="ticker-title">♪ &nbsp; Alianza Radio — Transmitiendo en vivo... &nbsp; ♪</span>';
+}
+
+function startMetadataSSE() {
+  if (sseSource) return; // already connected
+  sseSource = new EventSource(META_URL);
+
+  sseSource.onmessage = function(e) {
+    try {
+      const data = JSON.parse(e.data);
+      handleMetadata(data);
+    } catch(err) {
+      // raw text fallback
+      if (e.data && e.data.trim()) updateNowPlaying(e.data.trim());
+    }
+  };
+
+  // Zeno also sends named 'metadata' events
+  sseSource.addEventListener('metadata', function(e) {
+    try {
+      const data = JSON.parse(e.data);
+      handleMetadata(data);
+    } catch(err) {}
+  });
+
+  sseSource.onerror = function() {
+    // SSE dropped, retry in 10s
+    sseSource.close();
+    sseSource = null;
+    setTimeout(() => { if (isPlaying) startMetadataSSE(); }, 10000);
+  };
+}
+
+function stopMetadataSSE() {
+  if (sseSource) { sseSource.close(); sseSource = null; }
+}
+
+function handleMetadata(data) {
+  // Zeno sends: { streamTitle, title, artist, ... }
+  const artist = data.artist || '';
+  const title  = data.title  || data.streamTitle || '';
+
+  if (artist && title) {
+    updateNowPlaying(artist, title);
+    updateMediaSession(artist, title);
+    document.getElementById('streamStatus').textContent = 'EN VIVO';
+  } else if (title) {
+    updateNowPlaying('', title);
+    updateMediaSession('Alianza Radio', title);
+  } else if (data.streamTitle) {
+    updateNowPlaying('', data.streamTitle);
+    updateMediaSession('Alianza Radio', data.streamTitle);
+  }
+
+  if (data.bitrate)    document.getElementById('streamBitrate').textContent   = data.bitrate + ' kbps';
+  if (data.listeners)  document.getElementById('streamListeners').textContent = data.listeners;
+  if (data.genre)      document.getElementById('streamGenre').textContent     = data.genre.toUpperCase();
 }
 
 function updateNowPlaying(artist, title) {
@@ -683,20 +706,24 @@ function updateNowPlaying(artist, title) {
   }
 }
 
+// Set defaults immediately
 setDefaultMeta();
 
-// Try to get metadata even before pressing play
-fetchIcecastMeta();
+// Start SSE right away so info shows before pressing play
+startMetadataSSE();
 
+// Check if user was playing before leaving — show resume hint
 try {
   if (localStorage.getItem('radio_playing') === '1') {
+    // Was playing before — show pulsing play button hint
     setTimeout(() => {
       playBtn.style.animation = 'playPulse 1s ease-in-out 3';
     }, 500);
   }
 } catch(e) {}
 
-// ---- Media Session API ----
+
+// ---- Media Session API (lock screen / notification controls) ----
 function updateMediaSession(artist, title) {
   if ('mediaSession' in navigator) {
     navigator.mediaSession.metadata = new MediaMetadata({
@@ -710,7 +737,10 @@ function updateMediaSession(artist, title) {
   }
 }
 
-// ---- Background playback ----
+// ---- BACKGROUND PLAYBACK: keep audio alive at all costs ----
+
+// 1) Silent AudioContext with oscillator at volume 0
+//    This tricks the browser into thinking audio is active and prevents tab throttling
 let silentCtx = null;
 function startSilentKeepAlive() {
   if (silentCtx) return;
@@ -718,25 +748,31 @@ function startSilentKeepAlive() {
     silentCtx = new (window.AudioContext || window.webkitAudioContext)();
     const osc = silentCtx.createOscillator();
     const gain = silentCtx.createGain();
-    gain.gain.value = 0.001;
+    gain.gain.value = 0.001; // inaudible but non-zero
     osc.connect(gain);
     gain.connect(silentCtx.destination);
     osc.start();
+    // Resume context if suspended (mobile browsers suspend on background)
     setInterval(() => {
-      if (silentCtx && silentCtx.state === 'suspended') silentCtx.resume().catch(() => {});
+      if (silentCtx && silentCtx.state === 'suspended') {
+        silentCtx.resume().catch(() => {});
+      }
     }, 2000);
   } catch(e) {}
 }
 
+// 2) Watchdog: if audio pauses and we didn't ask for it, restart immediately
 let watchdogInterval = null;
 function startWatchdog() {
   if (watchdogInterval) return;
   watchdogInterval = setInterval(() => {
     if (isPlaying && audio.paused) {
       audio.play().catch(() => {
+        // Stream dropped — silently reload without showing error
         audio.src = STREAM_URL;
         audio.load();
         audio.play().catch(() => {
+          // Autoplay blocked — reset UI cleanly, no error message
           setPlayingState(false);
           stopTimer();
           stopWatchdog();
@@ -751,6 +787,7 @@ function stopWatchdog() {
   watchdogInterval = null;
 }
 
+// 3) On visibility change — resume AudioContext and watchdog immediately
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
     if (silentCtx && silentCtx.state === 'suspended') silentCtx.resume().catch(() => {});
@@ -759,15 +796,16 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+// 4) Web Lock API — prevents browser from throttling background tabs (Chrome/Android)
 function requestWakeLock() {
   if ('locks' in navigator) {
     navigator.locks.request('radio_stream', { mode: 'shared' }, () => {
-      return new Promise(() => {});
+      return new Promise(() => {}); // never resolves = holds lock forever
     });
   }
 }
 
-// ---- Web Audio visualizer ----
+// ---- Web Audio visualizer (enhances wave) ----
 let audioCtx, analyser, src, rafId;
 
 audio.addEventListener('play', () => {
